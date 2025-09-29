@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 // Serve static files (adjust if your index.html location differs)
-// app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public')));
 // Serve index.html at root route
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
