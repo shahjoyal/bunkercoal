@@ -1,120 +1,160 @@
-const APIBASE = window.location.origin + '/api';
-let latestBlendId = null;
+// public/output.js
+// Minimal robust script to fetch latest blend and populate GCV/cost/fields
+(function () {
+  const APIBASE = window.location.origin + '/api';
+  let latestBlendId = null;
 
-function collectFormData() {
-  const rows = [];
-  for (let r = 1; r <= 3; r++) {
-    const coalNameInput = document.getElementById(`coalName${r}`);
-    const coalName = coalNameInput ? coalNameInput.value.trim() : '';
-
-    const percentages = [];
-    for (let m = 0; m <= 6; m++) {
-      const p = document.querySelector(`.percentage-input[data-row='${r}'][data-mill='${m}']`);
-      const v = p ? parseFloat(p.value) || 0 : 0;
-      percentages.push(v);
+  // helpers
+  function getTextOrValue(el) {
+    if (!el) return '';
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return el.value ?? '';
+    return el.innerText ?? '';
+  }
+  function setTextOrValue(el, txt) {
+    if (!el) return;
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') el.value = txt ?? '';
+    else el.innerText = txt ?? '';
+  }
+  function setAllTextOrValue(selector, txt) {
+    Array.from(document.querySelectorAll(selector)).forEach(el => setTextOrValue(el, txt));
+  }
+  function pickVisibleOrFirst(selector) {
+    const els = Array.from(document.querySelectorAll(selector));
+    if (!els.length) return null;
+    // prefer inside active panel
+    const active = document.querySelector('.tab-panel.active');
+    if (active) {
+      const inside = els.find(e => active.contains(e));
+      if (inside) return inside;
     }
-
-    const gcvBox = document.getElementById(`gcvBox${r}`);
-    const costBox = document.getElementById(`costBox${r}`);
-
-    const gcv = gcvBox ? parseFloat(gcvBox.innerText) || 0 : 0;
-    const cost = costBox ? parseFloat(costBox.value) || 0 : 0;
-
-    rows.push({ coal: coalName, percentages, gcv, cost });
+    const visible = els.find(e => e.offsetParent !== null);
+    if (visible) return visible;
+    return els[0];
   }
 
-  const flows = [];
-  document.querySelectorAll('.flow-input').forEach((el) => {
-    flows.push(parseFloat(el.value) || 0);
-  });
+  // populate DOM from server blend object
+  function populateBlendIntoDOM(data) {
+    if (!data || !Array.isArray(data.rows)) return;
+    data.rows.forEach((row, rIdx) => {
+      const i = rIdx + 1;
+      setAllTextOrValue(`#coalName${i}`, row.coal ?? '');
+      (row.percentages || []).forEach((pct, mIdx) => {
+        setAllTextOrValue(`.percentage-input[data-row='${i}'][data-mill='${mIdx}']`, (pct === null || pct === undefined) ? '' : String(pct));
+      });
+      const gcvTxt = (row.gcv !== undefined && row.gcv !== null && row.gcv !== '') ? Number(row.gcv).toFixed(2) : '';
+      setAllTextOrValue(`#gcvBox${i}`, gcvTxt);
+      const costTxt = (row.cost !== undefined && row.cost !== null && row.cost !== '') ? Number(row.cost).toFixed(2) : '';
+      setAllTextOrValue(`#costBox${i}`, costTxt);
+    });
 
-  const generationInput = document.getElementById('generation');
-  const generation = generationInput ? parseFloat(generationInput.value) || 0 : 0;
+    (data.flows || []).forEach((f, mIdx) => {
+      setAllTextOrValue(`.flow-input[data-mill='${mIdx}']`, (f === null || f === undefined) ? '' : String(f));
+    });
 
-  return { rows, flows, generation };
-}
+    setAllTextOrValue('#generation', (data.generation !== undefined && data.generation !== null) ? String(data.generation) : '');
 
-async function fetchAndPopulateLatestBlend() {
-  try {
-    const res = await fetch(`${APIBASE}/blend/latest`);
-    if (!res.ok) {
-      console.log('No saved blend data found or error fetching');
+    // small summary fields (if exist)
+    if (data.totalFlow !== undefined && data.totalFlow !== null) setAllTextOrValue('#totalFlow', Number(data.totalFlow).toFixed(2));
+    if (data.avgGCV !== undefined && data.avgGCV !== null && !isNaN(Number(data.avgGCV))) setAllTextOrValue('#avgGCV', Number(data.avgGCV).toFixed(2));
+    if (data.avgAFT !== undefined && data.avgAFT !== null && !isNaN(Number(data.avgAFT))) setAllTextOrValue('#avgAFT', Number(data.avgAFT).toFixed(2));
+    if (data.heatRate !== undefined && data.heatRate !== null && !isNaN(Number(data.heatRate))) setAllTextOrValue('#heatRate', Number(data.heatRate).toFixed(2));
+    if (data.costRate !== undefined && data.costRate !== null && !isNaN(Number(data.costRate))) setAllTextOrValue('#COSTRATE', Number(data.costRate).toFixed(2));
+
+    latestBlendId = data._id || data.id || latestBlendId;
+
+    // run UI hooks if present (safe-guarded)
+    try {
+      const panels = Array.from(document.querySelectorAll('.tab-panel'));
+      panels.forEach(panel => {
+        if (typeof initPanel === 'function') initPanel(panel);
+        if (typeof validateMillPercentages === 'function') validateMillPercentages(panel);
+        if (typeof updateBunkerColors === 'function') updateBunkerColors(panel);
+      });
+    } catch (e) {
+      console.warn('post-populate hook error', e);
+    }
+    console.log('Blend data loaded into DOM from server. GCVs:', data.rows.map(r => r.gcv));
+  }
+
+  async function fetchAndPopulateLatestBlend() {
+    try {
+      const r = await fetch(`${APIBASE}/blend/latest`);
+      if (!r.ok) {
+        console.warn('No latest blend (status ' + r.status + ')');
+        return null;
+      }
+      const data = await r.json();
+      populateBlendIntoDOM(data);
+      return data;
+    } catch (err) {
+      console.error('fetchAndPopulateLatestBlend error', err);
       return null;
     }
-    const data = await res.json();
-    latestBlendId = data._id || data.id || null;
+  }
 
-    if (!data.rows) return null;
-
-    data.rows.forEach((row, rIdx) => {
-      const coalNameInput = document.getElementById(`coalName${rIdx + 1}`);
-      if (coalNameInput) coalNameInput.value = row.coal;
-
-      row.percentages.forEach((pct, mIdx) => {
-        const pctInput = document.querySelector(`.percentage-input[data-row='${rIdx + 1}'][data-mill='${mIdx}']`);
-        if (pctInput) pctInput.value = pct;
+  // Save function (keeps your existing API)
+  async function saveToServer(payload, method = 'POST', url = `${APIBASE}/blend`) {
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
-
-      const gcvInput = document.getElementById(`gcvBox${rIdx + 1}`);
-      if (gcvInput) gcvInput.innerText = row.gcv.toFixed(2);
-
-      const costInput = document.getElementById(`costBox${rIdx + 1}`);
-      if (costInput) costInput.value = row.cost.toFixed(2);
-    });
-
-    data.flows.forEach((flowVal, mIdx) => {
-      const flowInput = document.querySelector(`.flow-input[data-mill='${mIdx}']`);
-      if (flowInput) flowInput.value = flowVal;
-    });
-
-    const genInput = document.getElementById('generation');
-    if (genInput) genInput.value = data.generation;
-
-    if (typeof calculateBlended === 'function') {
-      const overviewPanel = document.getElementById('overviewTab');
-      if (overviewPanel) calculateBlended(overviewPanel);
+      if (!res.ok) throw new Error('Save failed: ' + res.status);
+      const d = await res.json();
+      latestBlendId = d.id || d._id || latestBlendId;
+      return d;
+    } catch (e) {
+      console.error('saveToServer error', e);
+      throw e;
     }
-
-    return data;
-  } catch (error) {
-    console.error('Error fetching blend data:', error);
-    return null;
   }
-}
 
-async function saveToServer() {
-  const payload = collectFormData();
-  const url = latestBlendId ? `${APIBASE}/blend/${latestBlendId}` : `${APIBASE}/blend`;
-  const method = latestBlendId ? 'PUT' : 'POST';
-
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || res.status);
-    }
-    const data = await res.json();
-    latestBlendId = data.id || data._id || latestBlendId;
-    alert('Saved to database with id: ' + latestBlendId);
-
+  document.addEventListener('DOMContentLoaded', async () => {
     await fetchAndPopulateLatestBlend();
-  } catch (err) {
-    console.error('Network error saving data', err);
-    alert('Network error saving data: ' + err.message);
-  }
-}
+    // attach save button if present
+    const saveBtn = document.getElementById('saveBtn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', async (ev) => {
+        try {
+          // a minimal collectFormData so save button still works
+          const rows = [];
+          for (let r = 1; r <= 3; r++) {
+            const coal = (pickVisibleOrFirst(`#coalName${r}`)?.value ?? pickVisibleOrFirst(`#coalName${r}`)?.innerText ?? '').trim();
+            const percentages = [];
+            for (let m = 0; m < 6; m++) {
+              const pEl = pickVisibleOrFirst(`.percentage-input[data-row='${r}'][data-mill='${m}']`);
+              const raw = pEl ? getTextOrValue(pEl).trim() : '';
+              percentages.push(raw === '' ? 0 : (parseFloat(raw) || 0));
+            }
+            const gcvEl = pickVisibleOrFirst(`#gcvBox${r}`);
+            const gcv = gcvEl ? (parseFloat(getTextOrValue(gcvEl)) || 0) : 0;
+            const costEl = pickVisibleOrFirst(`#costBox${r}`);
+            const cost = costEl ? (parseFloat(getTextOrValue(costEl)) || 0) : 0;
+            rows.push({ coal, percentages, gcv, cost });
+          }
+          const flows = [];
+          for (let m = 0; m < 6; m++) {
+            const fEl = pickVisibleOrFirst(`.flow-input[data-mill='${m}']`);
+            flows.push(fEl ? (parseFloat(getTextOrValue(fEl)) || 0) : 0);
+          }
+          const genEl = pickVisibleOrFirst('#generation');
+          const generation = genEl ? (parseFloat(getTextOrValue(genEl)) || 0) : 0;
+          const payload = { rows, flows, generation };
+          const url = latestBlendId ? `${APIBASE}/blend/${latestBlendId}` : `${APIBASE}/blend`;
+          const method = latestBlendId ? 'PUT' : 'POST';
+          await saveToServer(payload, method, url);
+          alert('Saved blend (id: ' + (latestBlendId || 'new') + ')');
+        } catch (e) {
+          alert('Save failed (see console)');
+        }
+      });
+    }
+  });
 
-document.addEventListener('DOMContentLoaded', async () => {
-  await fetchAndPopulateLatestBlend();
-
-  const saveBtn = document.getElementById('saveBtn');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', saveToServer);
-  } else {
-    console.warn("Save button with id 'saveBtn' not found.");
-  }
-});
+  // expose for debugging
+  window.populateBlendIntoDOM = populateBlendIntoDOM;
+  window.pickVisibleOrFirst = pickVisibleOrFirst;
+})();
