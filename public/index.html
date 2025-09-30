@@ -633,7 +633,7 @@ h1 {
           <div class="mill"><input type="text" class="percentage-input" data-row="1" data-mill="3" placeholder="%"></div>
           <div class="mill"><input type="text" class="percentage-input" data-row="1" data-mill="4" placeholder="%"></div>
           <div class="mill"><input type="text" class="percentage-input" data-row="1" data-mill="5" placeholder="%"></div>
-          <div class="mill"><div id="gcvBox1" class="gcv-box">--</div></div>
+          <div class="mill"><input type="text" id="gcvBox1" class="gcv-box"></input></div>
           <div class="mill"><input type="text" id="costBox1" class="cost-input" placeholder="Cost/MT"></div>
 
           <!-- Row 2: Coal selection 2 -->
@@ -645,7 +645,7 @@ h1 {
           <div class="mill"><input type="text" class="percentage-input" data-row="2" data-mill="3" placeholder="%"></div>
           <div class="mill"><input type="text" class="percentage-input" data-row="2" data-mill="4" placeholder="%"></div>
           <div class="mill"><input type="text" class="percentage-input" data-row="2" data-mill="5" placeholder="%"></div>
-          <div class="mill"><div id="gcvBox2" class="gcv-box">--</div></div>
+          <div class="mill"><input type="text" id="gcvBox2" class="gcv-box"></input></div>
           <div class="mill"><input type="text" id="costBox2" class="cost-input" placeholder="Cost/MT"></div>
 
           <!-- Row 3: Coal selection 3 -->
@@ -657,7 +657,7 @@ h1 {
           <div class="mill"><input type="text" class="percentage-input" data-row="3" data-mill="3" placeholder="%"></div>
           <div class="mill"><input type="text" class="percentage-input" data-row="3" data-mill="4" placeholder="%"></div>
           <div class="mill"><input type="text" class="percentage-input" data-row="3" data-mill="5" placeholder="%"></div>
-          <div class="mill"><div id="gcvBox3" class="gcv-box">--</div></div>
+          <div class="mill"><input type="text" id="gcvBox3" class="gcv-box"></input></div>
           <div class="mill"><input type="text" id="costBox3" class="cost-input" placeholder="Cost/MT"></div>
 
           <!-- NEW: Diagram row placed inside the grid so it aligns with Bunker 1..6 columns -->
@@ -1721,7 +1721,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Set GCV and cost inputs
         const gcvInput = document.getElementById(`gcvBox${rIdx + 1}`);
-        if (gcvInput) gcvInput.innerText = row.gcv.toFixed(2);
+        if (gcvInput) gcvInput.value = row.gcv.toFixed(2);
         const costInput = document.getElementById(`costBox${rIdx + 1}`);
         if (costInput) costInput.value = row.cost.toFixed(2);
       });
